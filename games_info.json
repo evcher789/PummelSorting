@@ -1580,7 +1580,9 @@
   {
     "id": "3116405277",
     "name": "cube fall (asteroid storm)",
-    "tags": [],
+    "tags": [
+      "Последний выживший"
+    ],
     "descr": "",
     "top": "",
     "show": true
@@ -2365,7 +2367,7 @@
     "tags": [
       "Сплифы + хексагоны"
     ],
-    "descr": "ываываы",
+    "descr": "",
     "top": "",
     "show": true
   },

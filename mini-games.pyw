@@ -243,7 +243,7 @@ class ThumbnailWidget(QFrame):
                 max-width: 612px;
             }
             QLineEdit:focus {
-                border: 3px solid #4CAF50;
+                border: 1px solid #4CAF50;
             }
         """)
         self.desc_input.setPlaceholderText("Введите описание игры...")
@@ -778,7 +778,7 @@ class GameBrowser(QMainWindow):
         
         
         # Selected games counter (now clickable)
-        self.selected_counter = QPushButton("Выбрано: 0")
+        self.selected_counter = QPushButton("Выбрано игр: 0")
         self.selected_counter.setStyleSheet("""
             QPushButton {
                 color: #e0e0e0;
@@ -1206,7 +1206,6 @@ class GameBrowser(QMainWindow):
                 for game_widget in visible_games:
                     game_widget.setVisible(True)
                 self.showing_selected_only = False
-                self.selected_counter.setText(f"Выбрано: {selected_count}")
                 self.statusBar.showMessage("Показаны все игры", 3000)
             else:
                 # Currently showing all games, so show only selected games
@@ -1217,7 +1216,6 @@ class GameBrowser(QMainWindow):
                         else:
                             game_widget.setVisible(False)
                 self.showing_selected_only = True
-                self.selected_counter.setText(f"Показать все ({selected_count})")
                 self.statusBar.showMessage(f"Показаны {selected_count} выбранных игр", 3000)
             
         except Exception as e:
@@ -1388,12 +1386,34 @@ class GameBrowser(QMainWindow):
             self.statusBar.showMessage(f"Ошибка при выборе игр по тегам: {str(e)}", 3000)
 
     def uncheck_all_boxes(self):
-        """Uncheck all checkboxes in the game list"""
-        for i in range(self.list_layout.count() - 1):  # -1 to skip the stretch
-            item = self.list_layout.itemAt(i)
-            if item and item.widget() and hasattr(item.widget(), 'checkbox'):
-                item.widget().checkbox.setChecked(False)
-        self.statusBar.showMessage("Все галочки сняты", 3000)
+        """Clear all selected game IDs from general_info.json"""
+        general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
+        
+        try:
+            # Load the general info
+            with open(general_info_path, 'r', encoding='utf-8') as f:
+                general_info = json.load(f)
+            
+            # Clear the ids array
+            general_info['ids'] = []
+            
+            # Save the updated general info
+            with open(general_info_path, 'w', encoding='utf-8') as f:
+                json.dump(general_info, f, ensure_ascii=False, indent=2)
+            
+            # Update the UI to reflect changes
+            self.update_total_selected_counter()
+            
+            # Uncheck all checkboxes in the game list to match the cleared IDs
+            for i in range(self.list_layout.count() - 1):  # -1 to skip the stretch
+                item = self.list_layout.itemAt(i)
+                if item and item.widget() and hasattr(item.widget(), 'checkbox'):
+                    item.widget().checkbox.setChecked(False)
+            
+            self.statusBar.showMessage("Все выбранные игры очищены из ids", 3000)
+            
+        except Exception as e:
+            self.statusBar.showMessage(f"Ошибка при очистке выбранных игр: {e}", 3000)
         
     def reload_games_info(self):
         self.load_games()
@@ -1444,7 +1464,7 @@ class GameBrowser(QMainWindow):
             self.statusBar.showMessage(f"Ошибка при перемещении в 'trash': {e}", 5000)
 
     def move_to_played(self):
-        """Move selected game folders to the 'played' directory"""
+        """Move selected game folders to the 'played' directory and transfer IDs to played_ids"""
         general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
         
         try:
@@ -1454,8 +1474,20 @@ class GameBrowser(QMainWindow):
                 
             game_ids = general_info.get('ids', [])
             if not game_ids:
-                print("No games selected to move to 'played'")
+                self.statusBar.showMessage("Нет выбранных игр для отправки в сыгранные", 3000)
                 return
+            
+            # Initialize played_ids if it doesn't exist
+            if 'played_ids' not in general_info:
+                general_info['played_ids'] = []
+            
+            # Move all selected game IDs from 'ids' to 'played_ids'
+            general_info['played_ids'].extend(game_ids)
+            general_info['ids'] = []  # Clear the ids list
+            
+            # Save the updated general info
+            with open(general_info_path, 'w', encoding='utf-8') as f:
+                json.dump(general_info, f, ensure_ascii=False, indent=2)
                 
             # Get the source and destination directories
             source_dir = os.path.dirname(__file__)
@@ -1475,20 +1507,22 @@ class GameBrowser(QMainWindow):
                         # Move the directory
                         os.rename(source_path, dest_path)
                         moved_count += 1
-                        self.statusBar.showMessage(f"Moved {game_id} to 'played' folder", 5000)
+                        self.statusBar.showMessage(f"Перемещено {game_id} в папку 'played'", 5000)
                     except Exception as e:
                         self.statusBar.showMessage(f"Error moving {game_id} to 'played': {e}", 5000)
             
-            self.statusBar.showMessage(f"Успешно перенесено {moved_count} из {len(game_ids)} выбранных игр в папку 'played'", 5000)
+            self.statusBar.showMessage(f"Успешно перенесено {moved_count} из {len(game_ids)} выбранных игр в папку 'played' и добавлено в played_ids", 5000)
             
+            # Update the UI to reflect changes
+            self.update_total_selected_counter()
             # Reload games to reflect changes
             self.load_games()
             
         except Exception as e:
-            self.statusBar.showMessage(f"Ошибка при перемещении в 'сыгранные': {e}", 5000)
+            self.statusBar.showMessage(f"Ошибка при отправке в сыгранные: {e}", 5000)
             
     def move_from_played(self):
-        """Move selected game folders from 'played' back to the main directory"""
+        """Move selected game folders from 'played' back to the main directory and transfer IDs from played_ids to ids"""
         general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
         
         try:
@@ -1496,10 +1530,23 @@ class GameBrowser(QMainWindow):
             with open(general_info_path, 'r', encoding='utf-8') as f:
                 general_info = json.load(f)
                 
-            game_ids = general_info.get('ids', [])
-            if not game_ids:
-                print("No games selected to move from 'played'")
+            # Get all games from played_ids to return them all
+            played_ids = general_info.get('played_ids', [])
+            if not played_ids:
+                self.statusBar.showMessage("Нет игр в 'played_ids' для возврата", 3000)
                 return
+            
+            # Initialize ids if it doesn't exist
+            if 'ids' not in general_info:
+                general_info['ids'] = []
+            
+            # Move all game IDs from 'played_ids' back to 'ids'
+            general_info['ids'].extend(played_ids)
+            general_info['played_ids'] = []  # Clear the played_ids list
+            
+            # Save the updated general info
+            with open(general_info_path, 'w', encoding='utf-8') as f:
+                json.dump(general_info, f, ensure_ascii=False, indent=2)
                 
             # Get the source and destination directories
             minigames_dir = os.path.dirname(__file__)
@@ -1507,7 +1554,7 @@ class GameBrowser(QMainWindow):
             
             moved_count = 0
             
-            for game_id in game_ids[:]:  # Create a copy of the list for iteration
+            for game_id in played_ids[:]:  # Create a copy of the list for iteration
                 source_path = os.path.join(played_dir, game_id)
                 dest_path = os.path.join(minigames_dir, game_id)
                 
@@ -1520,16 +1567,18 @@ class GameBrowser(QMainWindow):
                     except Exception as e:
                         self.statusBar.showMessage(f"Error moving {game_id} from 'played': {e}", 5000)
             
-            self.statusBar.showMessage(f"Успешно перемещено {moved_count} из {len(game_ids)} выбранных игр из папки 'played'", 5000)
+            self.statusBar.showMessage(f"Успешно перемещено {moved_count} из {len(played_ids)} игр из папки 'played' и возвращено в ids", 5000)
             
+            # Update the UI to reflect changes
+            self.update_total_selected_counter()
             # Reload games to reflect changes
             self.load_games()
             
         except Exception as e:
-            self.statusBar.showMessage(f"Ошибка при перемещении из 'сыгранных': {e}", 5000)
+            self.statusBar.showMessage(f"Ошибка при возврате из сыгранных: {e}", 5000)
     
     def transfer_selected_games(self):
-        """Move selected game folders to the parent directory"""
+        """Move selected game folders to the parent directory and transfer IDs to in_games_ids"""
         general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
         
         try:
@@ -1539,9 +1588,21 @@ class GameBrowser(QMainWindow):
                 
             game_ids = general_info.get('ids', [])
             if not game_ids:
-                print("No games selected for transfer")
+                self.statusBar.showMessage("Нет выбранных игр для переноса в игру", 3000)
                 return
-                
+            
+            # Initialize in_games_ids if it doesn't exist
+            if 'in_games_ids' not in general_info:
+                general_info['in_games_ids'] = []
+            
+            # Move all selected game IDs from 'ids' to 'in_games_ids'
+            general_info['in_games_ids'].extend(game_ids)
+            general_info['ids'] = []  # Clear the ids list
+            
+            # Save the updated general info
+            with open(general_info_path, 'w', encoding='utf-8') as f:
+                json.dump(general_info, f, ensure_ascii=False, indent=2)
+            
             # Get the parent directory (one level up from minigames)
             parent_dir = os.path.dirname(os.path.dirname(__file__))
             source_dir = os.path.dirname(__file__)
@@ -1561,88 +1622,143 @@ class GameBrowser(QMainWindow):
                     except Exception as e:
                         self.statusBar.showMessage(f"Error moving {game_id}: {e}", 5000)
             
-            self.statusBar.showMessage(f"Успешно перемещено {moved_count} из {len(game_ids)} выбранных игр", 5000)
+            self.statusBar.showMessage(f"Успешно перемещено {moved_count} из {len(game_ids)} выбранных игр и перенесено в in_games_ids", 5000)
 
+            # Update the UI to reflect changes
+            self.update_total_selected_counter()
             self.load_games()
             
         except Exception as e:
-            self.statusBar.showMessage(f"Ошибка при перемещении: {e}", 5000)
+            self.statusBar.showMessage(f"Ошибка при переносе в игру: {e}", 5000)
     
     def return_all_games(self):
-        """Move all game folders from parent directory back to minigames directory"""
-        # Get the parent directory (where the games are currently located)
-        parent_dir = os.path.dirname(self.root_path)
-    
-        # Get all game folders in the parent directory
-        game_folders = [f for f in os.listdir(parent_dir) 
-                   if os.path.isdir(os.path.join(parent_dir, f)) 
-                   and f.isdigit()  # Only directories with numeric names (game IDs)
-                   and f != os.path.basename(self.root_path)]  # Skip the minigames directory itself
-    
-        if not game_folders:
-            self.statusBar.showMessage("Нет игр для возврата в папку minigames", 3000)
-            return
+        """Move all game folders from parent directory back to minigames directory and transfer IDs from in_games_ids to ids"""
+        general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
         
-        # Move each game folder to the minigames directory
-        moved_count = 0
-        for game_id in game_folders:
-            source_path = os.path.join(parent_dir, game_id)
-            dest_path = os.path.join(self.root_path, game_id)
+        try:
+            # Load the general info to get in_games_ids
+            with open(general_info_path, 'r', encoding='utf-8') as f:
+                general_info = json.load(f)
+                
+            in_games_ids = general_info.get('in_games_ids', [])
+            if not in_games_ids:
+                self.statusBar.showMessage("Нет игр в 'in_games_ids' для возврата", 3000)
+                return
+            
+            # Initialize ids if it doesn't exist
+            if 'ids' not in general_info:
+                general_info['ids'] = []
+            
+            # Move all game IDs from 'in_games_ids' back to 'ids'
+            general_info['ids'].extend(in_games_ids)
+            general_info['in_games_ids'] = []  # Clear the in_games_ids list
+            
+            # Save the updated general info
+            with open(general_info_path, 'w', encoding='utf-8') as f:
+                json.dump(general_info, f, ensure_ascii=False, indent=2)
+            
+            # Get the parent directory (where the games are currently located)
+            parent_dir = os.path.dirname(self.root_path)
         
-            if os.path.exists(source_path) and os.path.isdir(source_path):
-                try:
-                    # Skip if destination already exists
-                    if not os.path.exists(dest_path):
-                        os.rename(source_path, dest_path)
-                        moved_count += 1
-                except Exception as e:
-                    self.statusBar.showMessage(f"Ошибка при переносе {game_id}: {str(e)}", 5000)
-                    continue
-    
-        if moved_count > 0:
-            self.statusBar.showMessage(f"Успешно возвращено {moved_count} игр в папку minigames", 5000)
-            # Reload the game list to reflect changes
-            self.load_games()
-        else:
-            self.statusBar.showMessage("Не удалось вернуть ни одной игры. Возможно, все игры уже находятся в папке minigames.", 5000)
+            # Get all game folders in the parent directory
+            game_folders = [f for f in os.listdir(parent_dir) 
+                       if os.path.isdir(os.path.join(parent_dir, f)) 
+                       and f.isdigit()  # Only directories with numeric names (game IDs)
+                       and f != os.path.basename(self.root_path)]  # Skip the minigames directory itself
+        
+            if not game_folders:
+                self.statusBar.showMessage("Нет игр для возврата в папку minigames", 3000)
+                return
+            
+            # Move each game folder to the minigames directory
+            moved_count = 0
+            for game_id in game_folders:
+                source_path = os.path.join(parent_dir, game_id)
+                dest_path = os.path.join(self.root_path, game_id)
+            
+                if os.path.exists(source_path) and os.path.isdir(source_path):
+                    try:
+                        # Skip if destination already exists
+                        if not os.path.exists(dest_path):
+                            os.rename(source_path, dest_path)
+                            moved_count += 1
+                    except Exception as e:
+                        self.statusBar.showMessage(f"Ошибка при переносе {game_id}: {str(e)}", 5000)
+                        continue
+        
+            if moved_count > 0:
+                self.statusBar.showMessage(f"Успешно возвращено {moved_count} игр в папку minigames и перенесено в ids", 5000)
+                # Update the UI to reflect changes
+                self.update_total_selected_counter()
+                # Reload the game list to reflect changes
+                self.load_games()
+            else:
+                self.statusBar.showMessage("Не удалось вернуть ни одной игры. Возможно, все игры уже находятся в папке minigames.", 5000)
+                
+        except Exception as e:
+            self.statusBar.showMessage(f"Ошибка при возврате игр: {e}", 5000)
 
     def transfer_all_games(self):
-        """Move all game folders to the parent directory"""
-        # Get the parent directory (where we'll move the games to)
-        parent_dir = os.path.dirname(self.root_path)
+        """Move all game folders to the parent directory and transfer all IDs to in_games_ids"""
+        general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
         
-        # Get all game folders in the current directory
-        game_folders = [f for f in os.listdir(self.root_path) 
-                       if os.path.isdir(os.path.join(self.root_path, f)) 
-                       and f != 'played'  # Skip the 'played' directory
-                       and not f.startswith('.')]  # Skip hidden directories
-        
-        if not game_folders:
-            self.statusBar.showMessage("Нет игр для переноса", 3000)
-            return
+        try:
+            # Load the general info
+            with open(general_info_path, 'r', encoding='utf-8') as f:
+                general_info = json.load(f)
             
-        # Move each game folder to the parent directory
-        moved_count = 0
-        for game_id in game_folders:
-            source_path = os.path.join(self.root_path, game_id)
-            dest_path = os.path.join(parent_dir, game_id)
+            # Get all game folders in the current directory
+            game_folders = [f for f in os.listdir(self.root_path) 
+                           if os.path.isdir(os.path.join(self.root_path, f)) 
+                           and f != 'played'  # Skip the 'played' directory
+                           and not f.startswith('.')]  # Skip hidden directories
             
-            if os.path.exists(source_path) and os.path.isdir(source_path):
-                try:
-                    # Skip if destination already exists
-                    if not os.path.exists(dest_path):
-                        os.rename(source_path, dest_path)
-                        moved_count += 1
-                except Exception as e:
-                    self.statusBar.showMessage(f"Ошибка при переносе {game_id}: {str(e)}", 5000)
-                    continue
-        
-        if moved_count > 0:
-            self.statusBar.showMessage(f"Успешно перенесено {moved_count} игр в основную директорию", 5000)
-            # Reload the game list to reflect changes
-            self.load_games()
-        else:
-            self.statusBar.showMessage("Не удалось перенести ни одной игры. Возможно, все игры уже находятся в основном каталоге.", 5000)
+            if not game_folders:
+                self.statusBar.showMessage("Нет игр для переноса", 3000)
+                return
+            
+            # Initialize in_games_ids if it doesn't exist
+            if 'in_games_ids' not in general_info:
+                general_info['in_games_ids'] = []
+            
+            # Add all game IDs to in_games_ids
+            general_info['in_games_ids'].extend(game_folders)
+            general_info['ids'] = []  # Clear the ids list
+            
+            # Save the updated general info
+            with open(general_info_path, 'w', encoding='utf-8') as f:
+                json.dump(general_info, f, ensure_ascii=False, indent=2)
+            
+            # Get the parent directory (where we'll move the games to)
+            parent_dir = os.path.dirname(self.root_path)
+            
+            # Move each game folder to the parent directory
+            moved_count = 0
+            for game_id in game_folders:
+                source_path = os.path.join(self.root_path, game_id)
+                dest_path = os.path.join(parent_dir, game_id)
+                
+                if os.path.exists(source_path) and os.path.isdir(source_path):
+                    try:
+                        # Skip if destination already exists
+                        if not os.path.exists(dest_path):
+                            os.rename(source_path, dest_path)
+                            moved_count += 1
+                    except Exception as e:
+                        self.statusBar.showMessage(f"Ошибка при переносе {game_id}: {str(e)}", 5000)
+                        continue
+            
+            if moved_count > 0:
+                self.statusBar.showMessage(f"Успешно перенесено {moved_count} игр в основную директорию и добавлено в in_games_ids", 5000)
+                # Update the UI to reflect changes
+                self.update_total_selected_counter()
+                # Reload the game list to reflect changes
+                self.load_games()
+            else:
+                self.statusBar.showMessage("Не удалось перенести ни одной игры. Возможно, все игры уже находятся в основном каталоге.", 5000)
+                
+        except Exception as e:
+            self.statusBar.showMessage(f"Ошибка при переносе всех игр: {e}", 5000)
     
     def save_games_info(self):
         """Save all games info to games_info.json"""
@@ -1806,6 +1922,23 @@ class GameBrowser(QMainWindow):
             for btn in self.tag_buttons.values():
                 btn.setChecked(False)
 
+    def update_total_selected_counter(self):
+        """Update the total selected games counter (counts only games from 'ids' array)"""
+        # Count selected games from general_info.json (only from 'ids' array)
+        general_info_path = os.path.join(os.path.dirname(__file__), 'general_info.json')
+        try:
+            if os.path.exists(general_info_path):
+                with open(general_info_path, 'r', encoding='utf-8') as f:
+                    general_info = json.load(f)
+                    # Count only games from 'ids' array
+                    ids_count = len(general_info.get('ids', []))
+                    self.selected_counter.setText(f"Выбрано игр: {ids_count}")
+            else:
+                self.selected_counter.setText("Выбрано игр: 0")
+        except Exception as e:
+            print(f"Error updating total selected counter: {e}")
+            self.selected_counter.setText("Выбрано игр: 0")
+    
     def update_tag_button_counts(self):
         """Update the count of checked games for each tag"""
         # Initialize counters for each tag
@@ -1831,13 +1964,17 @@ class GameBrowser(QMainWindow):
     
     def update_selected_counter(self):
         """Update the selected games counter and tag button counts"""
+        # Count games in current filter
         count = 0
         for i in range(self.list_layout.count() - 1):  # -1 to skip the stretch
             item = self.list_layout.itemAt(i)
             if item and item.widget() and isinstance(item.widget(), ThumbnailWidget):
                 if item.widget().checkbox.isChecked():
                     count += 1
-        self.selected_counter.setText(f"Выбрано: {count}")
+        
+        # Update total selected counter (counts all selected games regardless of filter)
+        self.update_total_selected_counter()
+        
         self.update_tag_button_counts()
     
     def update_game_display(self):
